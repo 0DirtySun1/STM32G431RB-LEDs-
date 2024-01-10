@@ -47,16 +47,16 @@
 TIM_HandleTypeDef htim17;
 
 UART_HandleTypeDef huart4;
+DMA_HandleTypeDef hdma_uart4_rx;
+/* USER CODE BEGIN PV */
 volatile uint32_t millis = 0; // Variable to count milliseconds
 volatile uint8_t buttonFlag = 0; // Flag to indicate button press
-
-/* USER CODE BEGIN PV */
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_UART4_Init(void);
 static void MX_TIM17_Init(void);
 /* USER CODE BEGIN PFP */
@@ -76,17 +76,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	if (htim->Instance == TIM17) {
 		millis++; // Increment milliseconds counter
 
-		if(millis>1 && millis == 1000 || millis == 2000 || millis == 3000){
+		if ((millis > 1 && millis == 1000) || millis == 2000 || millis == 3000) {
 			printf("millisec: %lu\n ", millis);
-		}
-		else {
+		} else {
 			printf("LED OFF \r\n");
-		// Read button state using HAL function
-		buttonFlag = (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET);
+			// Read button state using HAL function
+			buttonFlag = (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET);
 
+		}
 	}
-}
-
 
 }
 int i = 1;
@@ -147,6 +145,7 @@ int main(void) {
 
 	/* Initialize all configured peripherals */
 	MX_GPIO_Init();
+	MX_DMA_Init();
 	MX_UART4_Init();
 	MX_TIM17_Init();
 	/* USER CODE BEGIN 2 */
@@ -197,18 +196,18 @@ int main(void) {
 		if (millis > 3500) {
 			millis = 0;
 		}
-		else if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET){
-			millis = 0;
-		}
+		/*else if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET){
+		 	 millis = 0;
+		 }*/
 	}
 
 	/* USER CODE END WHILE */
 
 	/* USER CODE BEGIN 3 */
 
-}
-/* USER CODE END 3 */
 
+/* USER CODE END 3 */
+}
 
 /**
  * @brief System Clock Configuration
@@ -325,6 +324,22 @@ if (HAL_UARTEx_DisableFifoMode(&huart4) != HAL_OK) {
 /* USER CODE BEGIN UART4_Init 2 */
 
 /* USER CODE END UART4_Init 2 */
+
+}
+
+/**
+ * Enable DMA controller clock
+ */
+static void MX_DMA_Init(void) {
+
+/* DMA controller clock enable */
+__HAL_RCC_DMAMUX1_CLK_ENABLE();
+__HAL_RCC_DMA1_CLK_ENABLE();
+
+/* DMA interrupt init */
+/* DMA1_Channel1_IRQn interrupt configuration */
+HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
 
 }
 
