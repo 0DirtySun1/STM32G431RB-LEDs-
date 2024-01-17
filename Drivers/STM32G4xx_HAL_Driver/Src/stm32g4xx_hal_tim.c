@@ -1381,7 +1381,11 @@ HAL_StatusTypeDef HAL_TIM_PWM_Init(TIM_HandleTypeDef *htim)
 
   return HAL_OK;
 }
-
+#define __HAL_TIM_SET_COMPARE(__HANDLE__, __CHANNEL__, __COMPARE__)\
+	(((__CHANNEL_) == TIM_CHANNEL_1) ? ((__HANDLE__)->Instance->CCR1 =(__COMPARE__)) :\
+	 ((__CHANNEL_) == TIM_CHANNEL_2) ? ((__HANDLE__)->Instance->CCR2 =(__COMPARE__)) :\
+	 ((__CHANNEL_) == TIM_CHANNEL_3) ? ((__HANDLE__)->Instance->CCR3 =(__COMPARE__)) :\
+	 ((__HANDLE__)->Instance->CCR4 =(__COMPARE__)))
 /**
   * @brief  DeInitializes the TIM peripheral
   * @param  htim TIM PWM handle
