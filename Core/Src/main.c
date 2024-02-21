@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include "stdio.h"
 #include "stm32g4xx_hal_tim.h"
+#include <stdbool.h>
 /*include "delay_us.h"*/
 /* USER CODE END Includes */
 
@@ -37,6 +38,8 @@
 #define LED_PIN_B GPIO_PIN_5
 #define LED_PIN_G GPIO_PIN_6
 #define LED_PIN_R GPIO_PIN_7
+#define DELAY 10
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -50,6 +53,7 @@ TIM_HandleTypeDef htim17;
 
 UART_HandleTypeDef huart4;
 DMA_HandleTypeDef hdma_uart4_rx;
+
 /* USER CODE BEGIN PV */
 volatile uint32_t millis = 0; // Variable to count milliseconds
 volatile uint8_t buttonFlag = 0; // Flag to indicate button press
@@ -61,6 +65,7 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_UART4_Init(void);
 static void MX_TIM17_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 #ifdef __GNUC__
@@ -73,28 +78,30 @@ static void MX_TIM17_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int sek = 0;
+static uint32_t counter1;
+int sek, milli_in_sek;
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	// check if TIMER x is the one responsible the interrupts
 	if (htim->Instance == TIM17) {
 		millis++; // Increment milliseconds counter
-		int milli_in_sek = millis;
+		counter1++;
+		milli_in_sek++;
 		if (milli_in_sek == 500) {
 			sek = sek + 0.5;
 			milli_in_sek = 0;
 		}
-		if ((millis > 1 && millis == 1000) || millis == 2000
-				|| millis == 3000) {
+		if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET) {
 			printf("millisec: %lu\n ", millis);
 		} else {
 			printf("LED OFF \r\n");
-			// Read button state using HAL function
-			buttonFlag = (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET);
-
 		}
+		// Read button state using HAL function
+		buttonFlag = (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET);
+
 	}
 
 }
+
 int i = 1;
 void PRINT_THROW() {
 	if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET) {
@@ -117,42 +124,29 @@ void LEDS_BLINKING() {
 		}
 	}
 }
+
 void LEDS_OFF() {
 	HAL_GPIO_WritePin(GPIOA, LED_PIN_R, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(GPIOA, LED_PIN_G, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(GPIOA, LED_PIN_B, GPIO_PIN_RESET);
 }
+
 void Modus_1() {
 	if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET) {
 		millis = 0;
 	}
 }
+
 void Modus_2() {
 }
 
 uint32_t elapsed_ms(void) {
 	static uint32_t previous;
-	uint32_t ms = HAL_GetTick();
+	uint32_t ms = counter1;
 	uint32_t diff = ms - previous;
 	previous = ms;
 	return diff;
 }
-
-static uint32_t counter1, counter2;
-/*uint32_t elapsed_ms(void) {
- static uint32_t previous;
- uint32_t ms = HAL_GetTick();
- uint32_t diff = ms - previous;
- previous = ms;
- return diff;
- }
-
- uint32_t counter1, counter2;
- uint32_t elapsed = elapsed_ms();
-
- counter1 += elapsed;
- counter2 += elapsed;
- */
 /* USER CODE END 0 */
 
 /**
@@ -187,13 +181,14 @@ int main(void) {
 	MX_DMA_Init();
 	MX_UART4_Init();
 	MX_TIM17_Init();
+	MX_TIM2_Init();
 	/* USER CODE BEGIN 2 */
-	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 	// Say something
 	uart_buf_len = sprintf(uart_buf, "Timer test\r\n");
 	HAL_UART_Transmit(&huart4, (uint8_t*) uart_buf, uart_buf_len, 100);
 	// Start timer
 	HAL_TIM_Base_Init(&htim17);
+	HAL_TIM_PWM_MspInit(&htim2);
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
@@ -201,12 +196,15 @@ int main(void) {
 	printf(uart_buf);
 	PRINT_THROW();
 	HAL_TIM_Base_Start_IT(&htim17);
+	HAL_TIM_Base_Init();
+	HAL_TIM_PWM_Init();
+	HAL_TIM_PWM_ConfigChannel();
+	HAL_TIM_MspPostInit(&htim2);
+
+	uint32_t pwm_register = 255;
+	bool direction = true;
 	while (1) {
 		elapsed_ms();
-		uint32_t elapsed = elapsed_ms();
-		counter1 = counter1 + elapsed;
-		counter2 = counter2 + elapsed;
-
 		if (buttonFlag) {
 			if (millis >= 0 && millis <= 300) {
 				HAL_GPIO_WritePin(GPIOA, LED_PIN_R, GPIO_PIN_SET);
@@ -239,37 +237,50 @@ int main(void) {
 		if (millis > 3500) {
 			millis = 0;
 		}
-		uint32_t pwm_register = HAL_TIM_ReadCapturedValue;
 
+		__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 0);
+		//pwm_register = HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_2);
 		if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET) {
-			if (HAL_TIM_PWM) {
-				HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+			if (!(TIM2->CR1 & TIM_CR1_CEN)) {
+				HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
 			}
-			if (pwm_register == 255 || pwm_register == 0) {
-				bool delay_on = True;
-				int elapsed_time = 0;
-				bool smth_happens = False;
-
-				if (delay_on) {
-					counter2 += elapsed_ms();
-					if (counter2 >= DELAY) {
-						if (pwm_register == 255) {
-							for (int i = 255; i > 0; i--) {
-								__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, i);
-							}
-						} else if (pwm_register == 0) {
-							for (int i = 0; i < 255; i++) {
-								__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, i);
-							}
-						}
-						delay_on = False;
-					}
-				} else {
-					HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+			if (counter1 >= DELAY) {
+				if ((direction == true) && pwm_register < 255) {
+					pwm_register++;
+					__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pwm_register);
+					TIM2->CCR2 = pwm_register;
+					counter1 = 0;
+				}
+				else if ((direction == false) && pwm_register > 0) {
+					pwm_register--;
+					__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pwm_register);
+					TIM2->CCR2 = pwm_register;
+					counter1 = 0;
+				}
+				else if (pwm_register == 0) {
+					direction = true;
+					__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pwm_register);
+					TIM2->CCR2 = pwm_register;
+					counter1 = 0;
+				}
+				else if (pwm_register == 255) {
+					direction = false;
+					__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pwm_register);
+					TIM2->CCR2 = pwm_register;
+					counter1 = 0;
+				}
+				else {
+					pwm_register = 0;
+					__HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pwm_register);
+					TIM2->CCR2 = pwm_register;
+					counter1 = 0;
 				}
 			}
+			uint32_t pwm_duty_cycle = TIM2->CCR2;
 		}
-
+		else {
+			HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_2);
+		}
 	}
 
 	/* USER CODE END WHILE */
@@ -333,6 +344,7 @@ static void MX_TIM2_Init(void) {
 
 	/* USER CODE END TIM2_Init 0 */
 
+	TIM_ClockConfigTypeDef sClockSourceConfig = { 0 };
 	TIM_MasterConfigTypeDef sMasterConfig = { 0 };
 	TIM_OC_InitTypeDef sConfigOC = { 0 };
 
@@ -345,6 +357,13 @@ static void MX_TIM2_Init(void) {
 	htim2.Init.Period = 255;
 	htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
 	htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+	if (HAL_TIM_Base_Init(&htim2) != HAL_OK) {
+		Error_Handler();
+	}
+	sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+	if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK) {
+		Error_Handler();
+	}
 	if (HAL_TIM_PWM_Init(&htim2) != HAL_OK) {
 		Error_Handler();
 	}
@@ -355,17 +374,17 @@ static void MX_TIM2_Init(void) {
 		Error_Handler();
 	}
 	sConfigOC.OCMode = TIM_OCMODE_PWM1;
-	sConfigOC.Pulse = 0;
+	sConfigOC.Pulse = 127;
 	sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
 	sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-	if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1)
+	if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2)
 			!= HAL_OK) {
 		Error_Handler();
 	}
 	/* USER CODE BEGIN TIM2_Init 2 */
 
 	/* USER CODE END TIM2_Init 2 */
-	HAL_TIM_MspPostInit(&htim2);
+
 
 }
 
@@ -379,6 +398,7 @@ static void MX_TIM17_Init(void) {
 	/* USER CODE BEGIN TIM17_Init 0 */
 
 	/* USER CODE END TIM17_Init 0 */
+
 	/* USER CODE BEGIN TIM17_Init 1 */
 
 	/* USER CODE END TIM17_Init 1 */
